@@ -1,0 +1,495 @@
+from inflfn import influence_functional
+import numpy as np
+from scipy.linalg import svd as la_svd
+from scipy.linalg import expm
+from eta_Bose import eta_Bose
+from time import time
+from opt_einsum import contract
+
+class tempo:
+
+    # def __init__ (self, h_0, N, k, t, b, jw, opA, opB, percentage, maxdim):
+    def __init__ (self, h_0, N, k, t, b, jw, percentage, maxdim):
+        #mpo_site, mps_site, max_bonddim, eps
+        self.h_0 = h_0
+        self.N = N
+        self.k = k
+        self.t = t
+        self.b = b
+        self.dt = (t-1j*b/2)/N
+        # self.opA = opA
+        # self.opB = opB
+        self.percentage = percentage
+        self.maxdim = maxdim
+        self.jw = jw
+        
+        self.eta = eta_Bose(self.t,self.b,self.jw,self.N)
+        self.eta_k = np.zeros(2*self.N + 2, dtype=complex)
+        self.eta_kk = np.zeros((2*self.N+2, 2*self.N+2), dtype=complex)
+
+        ek = self.eta.Eta_k(0)
+        for i in range(0, 2*self.N+1):
+            for j in range(1, i):
+                self.eta_kk[i, j] = self.eta.Eta_kk(i,j)
+
+        for i in range(0, self.N+1):
+            self.eta_k[i] = ek
+        for i in range(self.N+1, 2*self.N+1):
+            self.eta_k[i] = np.conj(ek)
+        ## all physical indices of the MPS 2N+1 - --- - 0
+        self.ind_arr = np.arange(2*self.N+1,-1,-1)
+        
+        #self.ifn = influence_functional(self.N,self.t,self.b,jw)
+        self.ifn = influence_functional(self.eta_k, self.eta_kk)
+        
+        self.maxbonddim_both = []
+        self.maxbonddim_sweep = []
+
+    ## this MPS is made to be left canonical
+    def get_MPS(self, opB):
+
+        self.mps = []
+
+        Uprop = expm(-1j*self.h_0*self.dt/2).T
+        U, S, Vh = np.linalg.svd(Uprop, full_matrices=False)
+        SVh = np.einsum('a,as->sa',S,Vh)
+
+        self.mps.append(U)
+
+        for _ in range(self.N-1):
+            Uprop = expm(-1j*self.h_0*self.dt).T
+            U, S, Vh = np.linalg.svd(Uprop, full_matrices=False)
+
+            ## SVh is from previous step
+            self.mps.append(np.einsum('sa,sb->sab',SVh,U))
+
+            ## update SVh
+            SVh = np.einsum('a,as->sa',S,Vh)
+
+        # Uprop = (expm(1j*self.h_0*self.dt.conjugate()/2)@self.opB\
+        #         @expm(-1j*self.h_0*self.dt/2)).T
+        Uprop = (expm(1j*self.h_0*self.dt.conjugate()/2)@opB\
+                @expm(-1j*self.h_0*self.dt/2)).T
+        U, S, Vh = np.linalg.svd(Uprop, full_matrices=False)
+        self.mps.append(np.einsum('sa,sb->sab',SVh,U))
+        SVh = np.einsum('a,as->sa',S,Vh)
+
+        for _ in range(self.N-1):
+            Uprop = expm(1j*self.h_0*self.dt.conjugate()).T
+            U, S, Vh = np.linalg.svd(Uprop, full_matrices=False)
+
+            ## SVh is from previous step
+            self.mps.append(np.einsum('sa,sb->sab',SVh,U))
+
+            ## update SVh
+            SVh = np.einsum('a,as->sa',S,Vh)
+
+        Uprop = expm(1j*self.h_0*self.dt.conjugate()/2).T
+        U, S, Vh = np.linalg.svd(Uprop, full_matrices=False)
+
+        ## SVh is from previous step
+        self.mps.append(np.einsum('sa,sb->sab',SVh,U))
+
+        ## update SVh
+        SVh = np.einsum('a,as->sa',S,Vh)
+
+        self.mps.append(SVh)
+        
+        # Left-canonicalize MPS for MPO-MPS contraction later
+        ll = len(self.mps)
+        U, S, Vh = self.svd_truncate(self.mps[0], [0], [1], 0.0)
+        SVh = S@Vh
+        self.mps[0] = U
+                
+        for i in range(1, ll-1):
+            temp = np.einsum('ab,jbc->jac', SVh, self.mps[i])
+            U, S, Vh = self.svd_truncate(temp, [0,1], [2], 0.0)
+            self.mps[i] = U
+            SVh = S@Vh
+        temp = np.einsum('ab,jb->ja', SVh, self.mps[ll-1])
+        self.mps[ll-1] = temp
+
+
+
+    def get_MPO(self,ind_arr,ind):
+        self.mpo = []
+
+        delta = np.einsum('pa,ji->jpia',np.eye(2),np.eye(2))
+
+        ## prep for tensors to add to F_MPO_k list
+        # print('ind_arr[0]=',ind_arr[0])
+        # print('ind=',ind)
+        # print('I_k',self.ifn.I_k (ind_arr[0],ind))
+        F_1 = np.einsum('sz,sb->szb',np.eye(2),self.ifn.I_k (ind_arr[0],ind))
+        self.mpo.append(F_1)
+
+        for i in range(1,len(ind_arr)-1):
+            #print('ind_arr[i]',ind_arr[i])
+            #print('I_k',self.ifn.I_k (ind_arr[i],ind))
+            # print('ind_arr[i]=',ind_arr[i])
+            # print('ind=',ind)
+            # print('I_k',self.ifn.I_k (ind_arr[i],ind))
+            if ind_arr[i] != ind:
+                self.mpo.append(np.einsum('jpia,jp->jpia',delta,self.ifn.I_k (ind_arr[i],ind)))
+            else:
+                self.mpo.append(np.einsum('ji,ajb->iajb',np.eye(2),self.ifn.I_k (ind_arr[i],ind)))
+            #print('newly added mpo',np.einsum('jpia,jp->jpia',delta,self.ifn.I_k (ind_arr[i],ind)))
+            #sys.quit()
+        #print('I_k',self.ifn.I_k (ind_arr[-1],ind))
+        F_end = np.einsum('sz,sb->sbz',np.eye(2),self.ifn.I_k (ind_arr[-1],ind))
+        self.mpo.append(F_end)
+
+    def svd_truncate(self, tensor, linds, rinds, cutoff):
+        shp = np.array(tensor.shape)
+        ldim = np.prod(shp[linds])
+        rdim = np.prod(shp[rinds])
+        dest = np.concatenate((linds, rinds))
+        mat = np.reshape(np.moveaxis(tensor, np.arange(len(dest)), np.argsort(dest)), (ldim, rdim))
+        #print('mat',mat)
+        #try:
+        #    U, s, Vh = la_svd(mat, full_matrices=False, lapack_driver='gesdd')
+        #except:
+        #    U, s, Vh = la_svd(mat, full_matrices=False, lapack_driver='gesvd')
+        #U, s, Vh = np.linalg.svd(mat, full_matrices=False)
+        U, s, Vh = la_svd(mat, full_matrices=False, lapack_driver='gesvd')
+        
+        s2 = np.power(s, 2)
+        tot_wt = np.sum(s2)
+        discard_wts = np.cumsum(np.flip(s2)) / tot_wt
+        #print(discard_wts)
+        trunc_dim = len(s)
+        if cutoff > 0.0:
+            trunc_dim = np.count_nonzero(discard_wts > (cutoff ** 2))
+
+        U_trunc = np.reshape(U[:, 0:trunc_dim], np.concatenate((shp[linds], [trunc_dim])))
+        Vh_trunc = np.reshape(Vh[0:trunc_dim, :], np.concatenate(([trunc_dim], shp[rinds])))
+        S_trunc = np.diag(s[0:trunc_dim])
+
+        return U_trunc, S_trunc, Vh_trunc
+    
+        
+    def get_bond_dims(self):
+        n = len(self.mps)
+        bds = np.zeros(n-1, dtype=int)
+        bds[0] = (self.mps[0].shape)[1]
+        for i in range(1, n-1):
+            bds[i] = (self.mps[i].shape)[2]
+        return bds
+    
+    def dump_svdvals(self, n, val):
+        truncated_dimension = len(val)
+        if truncated_dimension >= self.maxdim:
+            self.maxdim = truncated_dimension
+        val_str_list = np.char.mod('%.16e', val)
+        val_str = ",".join(val_str_list)
+        with open(str(self.outpath / 'svd' / f'n={n}.csv'), 'a+') as f:
+            f.write(val_str)
+            f.write('\n')
+
+    def zipup_mpo_mps_contraction(self): 
+        # print('zipup',len(self.mps)//2)
+        t0 = time()   
+        # Note: the latest time is always mps[0]
+        # Written out left to right as 0, 1, ... N, the MPS before contraction is assumed to be left canonical
+        # We will contract the MPO from right to left, shifting the orthogonality center towards the left as we move along
+        # The final MPS will be right canonical
+        # A sweep returns the MPS to left canonical form
+
+        # Initially, have the MPO and MPS
+        #
+        #   0   1   2           N     : MPO
+        #       0   1   2 ...  N-1    : MPS
+
+        # Local hilbert space size
+        # d = self.mps[0].shape[0]
+        
+        if len(self.mps) > 1:
+            #      j
+            #      |
+            #    |---|
+            #  a-|   |
+            #    |---|
+            #      |
+            #      i
+            #      |
+            #    |---|
+            #  c-|   |
+            #    |---|
+
+            temp = np.einsum('jai,ic->acj', self.mpo[-1], self.mps[-1])
+            U, S, Vh = self.svd_truncate(temp, [0,1], [2], self.percentage / 10)
+            
+            self.mps[-1] = np.transpose(Vh) # conform to the convention for index ordering
+            US = U@S
+            
+            for i in range(2, len(self.mps)):
+
+                
+                #      j
+                #      |
+                #    |---|
+                #  a-|   |-b
+                #    |---|
+                #      |
+                #      i
+                #      |
+                #    |---|
+                #  c-|   |-d
+                #    |---|
+
+                #if i == 11:
+                    #print('mps at 11',self.mps[-11])
+                    #print('mpo at 11',self.mpo[-11])
+                #temp = np.einsum('jaib,icd,bde->acje', self.mpo[-i], self.mps[-i], US)
+                temp = contract('jaib,icd,bde->acje', self.mpo[-i], self.mps[-i], US)
+                U, S, Vh = self.svd_truncate(temp, [0,1], [2,3], self.percentage / 10)
+                self.mps[-i] = np.moveaxis(Vh, [0, 1, 2], np.argsort([1, 0, 2]))
+                US = U@S
+
+            #      j
+            #      |
+            #    |---|
+            #    |   |-b
+            #    |---|
+            #      |
+            #      i
+            #      |
+            #    |---|
+            #    |   |-d
+            #    |---|
+            #self.mps[0] = np.einsum('jib,id,bde->je', self.mpo[0], self.mps[0], US)
+            self.mps[0] = contract('jib,id,bde->je', self.mpo[0], self.mps[0], US)
+
+
+
+
+            # MPS is now right canonical, with orthogonality center at the leftmost site
+            self.maxbonddim_both.append(np.max(self.get_bond_dims()))
+
+            ll = len(self.mps)
+            #dump_flag = (ll == self.M) or (ll == self.M + int(self.N / 2)) or (ll == self.M + self.N)
+            
+            #if (ll == self.M) or (ll == self.M + int(self.N / 2)) or (ll == self.M + self.N):
+            #    self.sweep_mps(True, True)
+            #else:
+            #    self.sweep_mps(True, False)
+                
+            U, S, Vh = self.svd_truncate(self.mps[0], [0], [1], self.percentage)
+            SVh = S@Vh
+            self.mps[0] = U
+            # if dump_flag:
+            #     self.dump_svdvals(ll, np.diagonal(S))
+                
+            for i in range(1, ll-1):
+                #              |
+                #    |---|   |---|
+                #  a-|   |-b-|   |-c
+                #    |---|   |---|
+                temp = np.einsum('ab,jbc->jac', SVh, self.mps[i])
+                U, S, Vh = self.svd_truncate(temp, [0,1], [2], self.percentage)
+                self.mps[i] = U
+                SVh = S@Vh
+                # if dump_flag:
+                #     self.dump_svdvals(ll, np.diagonal(S))
+            #              |
+            #    |---|   |---|
+            #  a-|   |-b-|   |
+            #    |---|   |---|
+            temp = np.einsum('ab,jb->ja', SVh, self.mps[ll-1])
+            self.mps[ll-1] = temp
+
+            # MPS is now left canonical
+            self.maxbonddim_both.append(np.max(self.get_bond_dims()))
+            self.maxbonddim_sweep.append(np.max(self.get_bond_dims()))
+
+        # print('time to do zipup: ', time()-t0)
+
+    def decimate_site(self, si):
+        # First shift orthogonality center to site si
+        # Sum over site index, subsume result into site si-1
+        # Left canonicalize final result
+        
+        ll = len(self.mps)
+        d = self.mps[0].shape[0]
+        triv = np.ones(d)
+
+        U, S, Vh = self.svd_truncate(self.mps[ll-1], [1], [0], 0.0)
+
+        self.mps[ll-1] = Vh.T
+        US = U@S
+        
+        for i in range(ll-2, si, -1):
+            temp = np.einsum('iab,bc->aic', self.mps[i], US)
+            U, S, Vh = self.svd_truncate(temp, [0], [1,2], 0.0)
+            US = U@S
+            self.mps[i] = np.moveaxis(Vh, [0, 1, 2], np.argsort([1, 0, 2]))
+            
+        #for i in range(0,d):
+        #    print((self.mps[si])[i, :, :])
+        #    print("\n")
+        temp = np.einsum('i,iab,bc->ac', triv, self.mps[si], US)
+        #self.mps[si] = np.einsum('iab,bc->iac', self.mps[si], US)
+        #temp = np.sum(self.mps[si],axis=0)
+        #print(mytemp)
+        #print("\n\n")
+        #print(temp)
+        #print("=====\n=====\n")
+        if si+1 == ll-1:
+            self.mps[si+1] = np.einsum('ab,ib->ia', temp, self.mps[si+1])
+        elif si+1 < ll-1:
+            self.mps[si+1] = np.einsum('ab,ibc->iac', temp, self.mps[si+1])
+        
+            U, S, Vh = self.svd_truncate(self.mps[si+1], [0,1], [2], 0.0)
+            self.mps[si+1] = U
+            SVh = S@Vh
+            for i in range(si+2, ll-1):
+                temp = np.einsum('ab,jbc->jac', SVh, self.mps[i])
+                U, S, Vh = self.svd_truncate(temp, [0,1], [2], 0.0)
+                self.mps[i] = U
+                SVh = S@Vh
+            temp = np.einsum('ab,jb->ja', SVh, self.mps[ll-1])
+            self.mps[ll-1] = temp
+        self.mps.pop(si)
+
+
+    def propagate_new (self, opA, opB):
+
+        print('canonicalized zipup; canonical decimation until the last 4')
+
+        self.ind_arr = np.arange(2*self.N+1,-1,-1)
+        self.maxbonddim_both = []
+        self.maxbonddim_sweep = []
+        
+        #self.get_MPS()
+        self.get_MPS(opB)
+
+        print('self.dt=',self.dt)
+        
+        contract_time = 0.0
+        mpo_time = 0.0
+        decim_time = 0.0
+
+        while len(self.ind_arr) > 4:
+
+            if True: #len(self.ind_arr)%2 == 0:
+                i = len(self.ind_arr)//2
+                tt = time()
+                self.get_MPO(self.ind_arr,self.ind_arr[i])
+                mpo_time += (time() - tt)
+
+                tt = time()
+                self.zipup_mpo_mps_contraction()
+                contract_time += (time() - tt)
+
+        
+
+                # self.mps[i] = np.sum(self.mps[i],axis=0)
+                # self.mps[i+1] = np.einsum('jk,ikl->ijl',self.mps[i],self.mps[i+1])
+                # self.mps.pop(i)
+                tt = time()
+                self.decimate_site(i)
+                
+                self.ind_arr = np.delete(self.ind_arr,i)
+                decim_time += (time() - tt)
+
+                
+            # else:
+
+                # i = len(self.ind_arr)//2
+                # self.get_MPO(self.ind_arr,self.ind_arr[i])
+
+                # self.zipup_mpo_mps_contraction()
+
+
+
+                # self.mps[i] = np.sum(self.mps[i],axis=0)
+                # self.mps[i-1] = np.einsum('ijk,kl->ijl',self.mps[i-1],self.mps[i])
+                # self.mps.pop(i)
+                # self.ind_arr = np.delete(self.ind_arr,i)
+
+        ## OUTSIDE OF THE WHILE LOOP
+        # 
+        # This is when mps has 4 elements
+        # so the tensors that receive the summed over tensors
+        # have different shapes 
+
+        #quit()
+        # print('length of mps',len(self.mps))
+        # for i in range(len(self.mps)):
+        #     print('mps i shape',self.mps[i].shape)
+            
+        i = len(self.ind_arr)//2
+        print('---i---',i)
+        tt = time()
+        self.get_MPO(self.ind_arr,self.ind_arr[i])
+        mpo_time += (time() - tt)
+
+        # print('length of mpo',len(self.mpo))
+        # for i in range(len(self.mpo)):
+        #     print('mpo i shape',self.mpo[i].shape)
+        tt = time()
+        self.zipup_mpo_mps_contraction()
+        contract_time += (time() - tt)
+
+        # print('length of mps after zipup',len(self.mps))
+        # for i in range(len(self.mps)):
+        #     print('mps i shape',self.mps[i].shape)
+        
+        tt = time()
+        self.mps[i] = np.sum(self.mps[i],axis=0)
+        self.mps[i+1] = np.einsum('jk,ik->ij',self.mps[i],self.mps[i+1])
+        self.mps.pop(i)
+        self.ind_arr = np.delete(self.ind_arr,i)
+        decim_time += (time() - tt)
+
+
+        ## this is when mps has 3 elements
+        i = len(self.ind_arr)//2
+        tt = time()
+        self.get_MPO(self.ind_arr,self.ind_arr[i])
+        mpo_time += (time() - tt)
+        
+        tt = time()
+        self.zipup_mpo_mps_contraction()
+        contract_time += (time() - tt)
+
+        tt = time()
+        self.mps[i] = np.sum(self.mps[i],axis=0)
+        #print('shape of mps[i-1]',self.mps[i-1].shape)
+        #print('shape of mps[i]',self.mps[i].shape)
+        self.mps[i-1] = np.einsum('ik,kl->il',self.mps[i-1],self.mps[i])
+        self.mps.pop(i)
+        self.ind_arr = np.delete(self.ind_arr,i)
+        decim_time += (time() - tt)
+            #bds = self.get_bond_dims()
+
+
+            # if (n == self.M) or (n == self.M + int(self.N / 2)) or (n == self.M + self.N - 1):
+            #     np.savetxt(str(self.outpath / f'n={n}_bds.csv'), bds, delimiter=',')
+
+        ## check the dimension
+        ## this is when mps has 2 elements
+        ## after einsum, dimension is (s_2N+1,s_0)
+        #print('before corr',np.einsum('ij,kj->ik',self.mps[0],self.mps[1]).T)
+        
+
+        tt = time()
+        # correlator = np.einsum('ij,kj->ik',self.mps[0],self.mps[1])@self.opA
+        correlator = np.einsum('ij,kj->ik',self.mps[0],self.mps[1])@opA
+        print("final contraction: ", time()-tt)
+
+        #print('correlator',correlator)
+        ## take the trace
+        tt = time()
+        correlator = np.trace(correlator)
+        print("final trace: ", time()-tt)
+
+        #print(self.maxbonddim)
+        
+        print("time to do contractions: ", contract_time)
+        print("time to make mpo: ", mpo_time)
+        print("time to decimate site: ", decim_time)
+
+        #print(self.maxbonddim)
+        
+        return correlator, np.average(np.array(self.maxbonddim_both)), np.average(np.array(self.maxbonddim_sweep))

@@ -53,10 +53,17 @@ class MPS():
 
         return bds
 
-    #def pop(self):
-    #    self.mps.pop()
-    #    self.loc -= 1
-    #    return
+    def pop(self):
+        '''
+        Removes the last site and moves the orthogonality center back by one.
+
+        Imaginary-time legs of the Kadanoff-Baym process tensor are contracted
+        into the neighboring site and then dropped. Popping the tensor list
+        alone would leave ``loc`` past the end of the MPS.
+        '''
+        self.mps.pop()
+        self.loc -= 1
+        return
     
     def canonicalize(self, loc: int):
         '''

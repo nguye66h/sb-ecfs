@@ -111,7 +111,7 @@ class TEMPO_SS():
         return
 
     def make_finf_ov(self):
-        '''
+        r'''
         Makes the F_{\infty} tensor using the Orus-Vidal approach (arXiv:0711.3960)
         '''
         dl = self.dl
@@ -160,7 +160,7 @@ class TEMPO_SS():
         return
     
     def make_finf_mbh(self):
-        '''
+        r'''
         Makes the F_{\infty} tensor using Hasting's modification of Orus-Vidal's iTEBD, which avoids inverting matrices.
         '''
         dl = self.dl
@@ -246,7 +246,7 @@ class TEMPO_SS():
         return G_t / normalization
     
     def _full_steadystate(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, complex]:
-        '''
+        r'''
         Computes the left and right eigenvectors of the full propagation tensor for one timestep. The full propagation tensor is formed from the contraction of F_{\infty} with two copies of the system propagator over half of one timestep, corresponding to a symmetric Trotter splitting with local error O(Δt^3).
 
         Returns
@@ -267,7 +267,14 @@ class TEMPO_SS():
         evol_tens = np.einsum('iab,sit->satb', self.finf, u_s)
 
         mat = evol_tens.reshape([evol_tens.shape[0] * evol_tens.shape[1], evol_tens.shape[2] * evol_tens.shape[3]]).T
-        nvecs = max(100, int(np.ceil(0.1 * mat.shape[0])))
+        dim = mat.shape[0]
+        # ARPACK requires the number of requested eigenvalues to be strictly
+        # less than dim - 1. The historical choice max(100, 10% of dim) is
+        # unchanged whenever that choice already satisfies the constraint
+        # (transfer matrices larger than 101, i.e. the production runs). It
+        # is clamped only for smaller problems, which previously crashed.
+        nvecs = max(100, int(np.ceil(0.1 * dim)))
+        nvecs = min(nvecs, dim - 2)
 
         w_l, v_l = eigs(mat, nvecs, which='LM')
         l_max = np.argmax(np.abs(w_l))

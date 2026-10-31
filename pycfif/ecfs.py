@@ -105,6 +105,10 @@ class ECFs:
             elif sp.alg == "ov_tebd":
                 print("Using Orus-Vidal iTEBD with nc =", sp.N)
                 if_ss.make_finf_ov()
+            else:
+                raise RuntimeError(
+                    f"Unknown iTEBD algorithm {sp.alg!r}. Expected 'mbh_tebd' or 'ov_tebd'."
+                )
 
             res_corr = if_ss.get_correlator(sp.opA, sp.opB)
             

@@ -97,7 +97,7 @@ class SimulationParamsSS(SimulationParams):
     opB: ndarray
         System observable for measurement
     alg: str
-        Algorithm to use for iTEBD. Can be "mbh_tebd", "ov_tebd", or "qr_tebd". Default="mbh_tebd"
+        Algorithm to use for iTEBD. Can be "mbh_tebd" or "ov_tebd". Default="mbh_tebd"
     tcut: float
         Timescale over which a smooth cutoff starts to take effect. Default=None
     '''

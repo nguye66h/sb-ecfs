@@ -1,0 +1,67 @@
+cff-version: 1.2.0
+message: >-
+  If you use this software, please cite the Journal of Chemical Physics
+  article given as the preferred citation.
+title: "pycfif: tensor-network influence functionals for equilibrium correlation functions"
+type: software
+authors:
+  - family-names: Nguyen
+    given-names: Haimi
+    orcid: "https://orcid.org/0000-0003-1685-445X"
+    affiliation: Department of Chemistry, Columbia University
+version: 0.1.0
+date-released: "2024-09-13"
+license: MIT
+repository-code: "https://github.com/nguye66h/sb-ecfs"
+url: "https://github.com/nguye66h/sb-ecfs"
+keywords:
+  - open quantum systems
+  - influence functional
+  - matrix product states
+  - spin-boson model
+preferred-citation:
+  type: article
+  title: "Correlation functions from tensor network influence functionals: The case of the spin-boson model"
+  authors:
+    - family-names: Nguyen
+      given-names: Haimi
+      orcid: "https://orcid.org/0000-0003-1685-445X"
+      affiliation: Department of Chemistry, Columbia University
+    - family-names: Ng
+      given-names: Nathan
+      orcid: "https://orcid.org/0000-0002-0885-6036"
+      affiliation: Department of Chemistry, Columbia University
+    - family-names: Lindoy
+      given-names: Lachlan P.
+      orcid: "https://orcid.org/0000-0002-1888-6490"
+      affiliation: National Physical Laboratory
+    - family-names: Park
+      given-names: Gunhee
+      orcid: "https://orcid.org/0000-0002-2818-488X"
+      affiliation: Division of Engineering and Applied Science, California Institute of Technology
+    - family-names: Millis
+      given-names: Andrew J.
+      orcid: "https://orcid.org/0000-0001-9413-6344"
+      affiliation: Department of Physics, Columbia University
+    - family-names: Chan
+      given-names: Garnet Kin-Lic
+      orcid: "https://orcid.org/0000-0001-8009-6038"
+      affiliation: Division of Chemistry and Chemical Engineering, California Institute of Technology
+    - family-names: Reichman
+      given-names: David R.
+      orcid: "https://orcid.org/0000-0002-5265-5637"
+      affiliation: Department of Chemistry, Columbia University
+  journal: "The Journal of Chemical Physics"
+  volume: 161
+  issue: 10
+  start: 104111
+  year: 2024
+  doi: "10.1063/5.0224880"
+  url: "https://doi.org/10.1063/5.0224880"
+identifiers:
+  - type: doi
+    value: "10.1063/5.0224880"
+    description: Journal of Chemical Physics article introducing the method
+  - type: url
+    value: "https://arxiv.org/abs/2406.15737"
+    description: arXiv preprint

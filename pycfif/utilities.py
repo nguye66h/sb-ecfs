@@ -5,7 +5,7 @@ from scipy import linalg
 from opt_einsum import contract
 
 def svd_truncate(tensor: np.ndarray, cutoff: float, linds: List[int], rinds: Optional[List[int]] = None, p: Optional[int] = 2, maxdim: Optional[int] = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    '''
+    r'''
     description
 
     Parameters

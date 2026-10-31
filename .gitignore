@@ -153,6 +153,12 @@ dmypy.json
 # pytype static type analyzer
 .pytype/
 
+# macOS Finder metadata
+.DS_Store
+
+# CSV output written by the example scripts
+examples/output/
+
 # Cython debug symbols
 cython_debug/
 

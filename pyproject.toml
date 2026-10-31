@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pycfif"
+version = "0.1.0"
+description = "Equilibrium correlation functions of open quantum systems from matrix-product influence functionals"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {file = "LICENSE"}
+authors = [
+    {name = "Haimi Nguyen"},
+]
+keywords = [
+    "open quantum systems",
+    "influence functional",
+    "process tensor",
+    "matrix product state",
+    "TEMPO",
+    "spin-boson",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "numpy>=1.22",
+    "scipy>=1.9",
+    "opt-einsum>=3.3",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7",
+]
+
+[project.urls]
+Homepage = "https://github.com/nguye66h/sb-ecfs"
+Repository = "https://github.com/nguye66h/sb-ecfs"
+Paper = "https://doi.org/10.1063/5.0224880"
+"arXiv" = "https://arxiv.org/abs/2406.15737"
+
+[tool.setuptools.packages.find]
+include = ["pycfif*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+# alpha = 0 makes some complex-time integrands identically zero. SciPy's
+# real quadrature then warns while casting 0j to 0. The value is unchanged.
+filterwarnings = [
+    "ignore:Casting complex values to real discards the imaginary part:Warning",
+]
